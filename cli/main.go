@@ -136,9 +136,6 @@ func (h *s3Handler) servingContent(w http.ResponseWriter, r *http.Request) {
 	// set response headers
 	for key, values := range resp.Header {
 		for _, value := range values {
-			if key == "Server" {
-				continue
-			}
 			if strings.Contains(key, "Wasabi") {
 				continue
 			}
