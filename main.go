@@ -139,5 +139,5 @@ func (h *s3Handler) servingContent(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// write response body to client
-	_ := io.Copy(w, resp.Body)
+	io.Copy(w, resp.Body)
 }
