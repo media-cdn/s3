@@ -6,6 +6,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/credentials"
@@ -25,7 +26,9 @@ func main() {
 	r.Use(middleware.StripSlashes)
 	r.Use(middleware.CleanPath)
 	r.Get("/{bucket}/*", s3Handler.servingContent)
-	http.ListenAndServe(port, r)
+	if err := http.ListenAndServe(port, r); err != nil {
+		log.Fatal("ListenAndServe:", err)
+	}
 }
 
 func newS3Client() *s3.Client {
@@ -57,6 +60,9 @@ func newS3Handler() *s3Handler {
 func (h *s3Handler) servingContent(w http.ResponseWriter, r *http.Request) {
 	bucket := chi.URLParam(r, "bucket")
 	path := chi.URLParam(r, "*")
+	if strings.HasSuffix(path, "/") {
+		return http.Error(w, http.StatusText(http.StatusForbidden), http.StatusForbidden)
+	}
 	// generate presigned URL
 	presignClient := s3.NewPresignClient(h.s3Client)
 	presignedGetRequest, err := presignClient.PresignGetObject(r.Context(), &s3.GetObjectInput{
@@ -90,7 +96,7 @@ func (h *s3Handler) servingContent(w http.ResponseWriter, r *http.Request) {
 	for key, values := range r.Header {
 		for _, value := range values {
 			// ignore header: If-Modified-Since, If-None-Match to prevent status 304
-			if key == "If-Modified-Since" || key == "If-None-Match" {
+			if key == "If-Modified-Since" || key == "If-None-Match" || key == "Server" {
 				continue
 			}
 
