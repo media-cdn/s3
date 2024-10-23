@@ -139,6 +139,12 @@ func (h *s3Handler) servingContent(w http.ResponseWriter, r *http.Request) {
 			if key == "Server" {
 				continue
 			}
+			if strings.Contains(key, "Wasabi") {
+				continue
+			}
+			if strings.Contains(value, "Wasabi") {
+				continue
+			}
 			w.Header().Add(key, value)
 		}
 	}
@@ -152,5 +158,14 @@ func (h *s3Handler) servingContent(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// write response body to client
-	io.Copy(w, resp.Body)
+
+	if _, err := io.Copy(w, resp.Body); err != nil {
+		log.Printf("failed to write response: %v", err)
+		http.Error(
+			w,
+			http.StatusText(http.StatusInternalServerError),
+			http.StatusInternalServerError,
+		)
+		return
+	}
 }
