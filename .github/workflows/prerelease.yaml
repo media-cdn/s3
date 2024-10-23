@@ -1,0 +1,27 @@
+name: prerelease
+on:
+  push:
+    branches:
+      - main
+permissions:
+  contents: write
+jobs:
+  create_prerelease:
+    if: ${{!contains(github.event.head_commit.message, '#NO_RELEASE#')}}
+    runs-on: ubuntu-latest
+    steps:
+      - id: compute_tag
+        uses: craig-day/compute-tag@v18
+        with:
+          github_token: ${{ github.token }}
+          branch: main
+          prerelease_suffix: next
+          version_type: prerelease
+      - name: create prerelease
+        uses: softprops/action-gh-release@v2
+        with:
+          token: ${{ secrets.GH_TOKEN }}
+          name: ${{ steps.compute_tag.outputs.next_tag }}
+          tag_name: ${{ steps.compute_tag.outputs.next_tag }}
+          generate_release_notes: true
+          prerelease: true
