@@ -61,7 +61,8 @@ func (h *s3Handler) servingContent(w http.ResponseWriter, r *http.Request) {
 	bucket := chi.URLParam(r, "bucket")
 	path := chi.URLParam(r, "*")
 	if strings.HasSuffix(path, "/") {
-		return http.Error(w, http.StatusText(http.StatusForbidden), http.StatusForbidden)
+		http.Error(w, http.StatusText(http.StatusForbidden), http.StatusForbidden)
+		return
 	}
 	// generate presigned URL
 	presignClient := s3.NewPresignClient(h.s3Client)
