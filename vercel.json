@@ -1,0 +1,15 @@
+{
+	"build": {
+		"env": {
+			"GO_BUILD_FLAGS": "-ldflags '-s -w'"
+		}
+	},
+  {
+  "rewrites": [
+    {
+      "source": "/(.*)",
+      "destination": "/api/s3"
+    }
+  ]
+}
+}
