@@ -1,0 +1,6 @@
+version: '3'
+dotenv: [".env"]
+tasks:
+  dev:
+    cmds:
+      - go run cli/main.go

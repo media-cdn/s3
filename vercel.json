@@ -4,12 +4,15 @@
 			"GO_BUILD_FLAGS": "-ldflags '-s -w'"
 		}
 	},
-  {
-  "rewrites": [
-    {
-      "source": "/(.*)",
-      "destination": "/api/s3"
-    }
-  ]
-}
+	"rewrites": [
+		{
+			"source": "/(.*)",
+			"destination": "/api/s3"
+		}
+	],
+	"functions": {
+		"api/s3.go": {
+			"runtime": "@vercel/go@3.2.0"
+		}
+	}
 }
