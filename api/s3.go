@@ -1,47 +1,45 @@
 package handler
 
 import (
+	"fmt"
 	"io"
 	"log"
 	"net/http"
-	"strconv"
 	"strings"
 
-	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/media-cdn/s3/client"
 )
+
+var s3Client = client.NewS3Client()
 
 func Handler(w http.ResponseWriter, r *http.Request) {
 	path := strings.TrimLeft(r.URL.Path, "/")
 	bucketName := strings.Split(path, "/")[0]
 	path = strings.Replace(path, bucketName+"/", "", 1)
-	if strings.HasSuffix(path, "/") {
-		http.Error(w, http.StatusText(http.StatusForbidden), http.StatusForbidden)
-		return
-	}
-	s3Client := client.NewS3Client()
-	input := &s3.GetObjectInput{
-		Bucket: aws.String(bucketName),
-		Key:    aws.String(path),
-		Range:  aws.String(r.Header.Get("Range")),
-	}
-	output, err := s3Client.GetObject(r.Context(), input)
+	output, err := s3Client.GetObject(r.Context(), bucketName, path, r.Header)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	w.WriteHeader(http.StatusOK)
-	w.Header().Add("Content-Type", *output.ContentType)
-	w.Header().Add("Content-Length", strconv.FormatInt(*output.ContentLength, 10))
-	w.Header().Add("Accept-Ranges", *output.AcceptRanges)
-	w.Header().Add("Last-Modified", output.LastModified.Format(http.TimeFormat))
-	w.Header().Add("ETag", *output.ETag)
-	w.Header().Add("Cache-Control", "max-age=31536000")
-	w.Header().Add("Expires", *output.ExpiresString)
-	w.Header().Add("Content-Disposition", *output.ContentDisposition)
-	w.Header().Add("Content-Encoding", *output.ContentEncoding)
-	w.Header().Add("Content-Range", *output.ContentRange)
+	defer output.Body.Close()
+	w.WriteHeader(output.StatusCode)
+	for key, values := range output.Header {
+		for _, value := range values {
+			if strings.Contains(key, "Wasabi") {
+				continue
+			}
+			if strings.Contains(value, "Wasabi") {
+				continue
+			}
+			w.Header().Add(key, value)
+		}
+	}
+	if output.Header.Get("Content-Range") != "" {
+		w.Header().Set("Content-Length", fmt.Sprintf("%d", output.ContentLength))
+		w.Header().Set("Content-Type", "application/octet-stream")
+		w.WriteHeader(http.StatusPartialContent)
+	}
+
 	if _, err := io.Copy(w, output.Body); err != nil {
 		log.Println(err)
 	}
