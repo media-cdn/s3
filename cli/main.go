@@ -66,11 +66,12 @@ func (h *s3Handler) servingContent(w http.ResponseWriter, r *http.Request) {
 	}
 	// generate presigned URL
 	presignClient := s3.NewPresignClient(h.s3Client)
-	presignedGetRequest, err := presignClient.PresignGetObject(r.Context(), &s3.GetObjectInput{
+	object := &s3.GetObjectInput{
 		Bucket: aws.String(bucket),
 		Key:    aws.String(path),
 		Range:  aws.String(r.Header.Get("Range")),
-	})
+	}
+	presignedGetRequest, err := presignClient.PresignGetObject(r.Context(), object)
 	if err != nil {
 		log.Printf("failed to presign request: %v", err)
 		http.Error(
@@ -97,7 +98,7 @@ func (h *s3Handler) servingContent(w http.ResponseWriter, r *http.Request) {
 	for key, values := range r.Header {
 		for _, value := range values {
 			// ignore header: If-Modified-Since, If-None-Match to prevent status 304
-			if key == "If-Modified-Since" || key == "If-None-Match" || key == "Server" {
+			if key == "If-Modified-Since" || key == "If-None-Match" {
 				continue
 			}
 
@@ -135,6 +136,9 @@ func (h *s3Handler) servingContent(w http.ResponseWriter, r *http.Request) {
 	// set response headers
 	for key, values := range resp.Header {
 		for _, value := range values {
+			if key == "Server" {
+				continue
+			}
 			w.Header().Add(key, value)
 		}
 	}
