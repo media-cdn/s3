@@ -6,6 +6,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/credentials"
@@ -24,7 +25,7 @@ func main() {
 	r.Use(middleware.Logger)
 	r.Use(middleware.StripSlashes)
 	r.Use(middleware.CleanPath)
-	r.Get("/{bucket}/{path}", s3Handler.servingContent)
+	r.Get("/", s3Handler.servingContent)
 	http.ListenAndServe(port, r)
 }
 
@@ -55,8 +56,9 @@ func newS3Handler() *s3Handler {
 // The servingContent function is the HTTP handler that takes a request, extracts the bucket name, object path from the parameters,
 // generates a signed URL for the private S3 object, and then response file content to client.
 func (h *s3Handler) servingContent(w http.ResponseWriter, r *http.Request) {
-	bucketName := chi.URLParam(r, "bucket")
-	path := chi.URLParam(r, "path")
+	path := strings.TrimLeft(r.URL.Path, "/")
+	bucketName := strings.Split(path, "/")[0]
+	path = strings.Replace(path, bucketName+"/", "", 1)
 
 	// generate presigned URL
 	presignClient := s3.NewPresignClient(h.s3Client)
