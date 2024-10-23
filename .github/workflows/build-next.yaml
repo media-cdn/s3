@@ -23,7 +23,6 @@ jobs:
       - uses: docker/build-push-action@v5
         with:
           context: .
-          file: build/Dockerfile
           push: true
           tags: henull/payment-go:next
           labels: ${{ steps.meta.outputs.labels }}
