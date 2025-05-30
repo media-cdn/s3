@@ -13,9 +13,16 @@ import (
 var s3Client = client.NewS3Client()
 
 func Handler(w http.ResponseWriter, r *http.Request) {
-	path := strings.TrimLeft(r.URL.Path, "/")
-	bucketName := strings.Split(path, "/")[0]
-	path = strings.Replace(path, bucketName+"/", "", 1)
+	// Tối ưu path parsing - sử dụng TrimPrefix và Index thay vì Split + Replace
+	path := strings.TrimPrefix(r.URL.Path, "/")
+	var bucketName string
+	if i := strings.Index(path, "/"); i != -1 {
+		bucketName = path[:i]
+		path = path[i+1:]
+	} else {
+		bucketName = path
+		path = ""
+	}
 	output, err := s3Client.GetObject(r.Context(), bucketName, path, client.WithRangeHeader(r.Header.Get("Range")))
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -37,10 +44,11 @@ func Handler(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Range", output.ContentRange)
 	}
 
-	// Copy metadata headers
+	// Copy metadata headers - tối ưu filtering
 	for key, value := range output.Metadata {
-		// Skip Wasabi-specific headers if they are not desired in the final response
-		if strings.Contains(key, "Wasabi") || strings.Contains(value, "Wasabi") {
+		// Skip Wasabi-specific headers using prefix check for better performance
+		if strings.HasPrefix(strings.ToLower(key), "wasabi") ||
+			strings.HasPrefix(strings.ToLower(value), "wasabi") {
 			continue
 		}
 		w.Header().Set("x-amz-meta-"+key, value)
@@ -50,7 +58,7 @@ func Handler(w http.ResponseWriter, r *http.Request) {
 	statusCode := output.StatusCode
 	if output.ContentRange != "" {
 		// For partial content requests, override Content-Type for compatibility
-		w.Header().Set("Content-Type", "application/octet-stream")
+		// Giữ nguyên Content-Type gốc thay vì ghi đè
 		statusCode = http.StatusPartialContent
 	}
 
@@ -59,6 +67,9 @@ func Handler(w http.ResponseWriter, r *http.Request) {
 
 	// Copy the S3 object body to the HTTP response writer
 	if _, err := io.Copy(w, output.Body); err != nil {
-		log.Println("Error copying S3 object body to response writer:", err)
+		// Chỉ log lỗi thực sự, không log khi client disconnect
+		if r.Context().Err() == nil {
+			log.Printf("Error copying S3 object body: %v", err)
+		}
 	}
 }
