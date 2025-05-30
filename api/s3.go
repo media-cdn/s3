@@ -5,6 +5,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"os"
 	"strings"
 
 	"github.com/media-cdn/s3/client"
@@ -12,25 +13,33 @@ import (
 
 var s3Client = client.NewS3Client()
 
-func Handler(w http.ResponseWriter, r *http.Request) {
-	// Tối ưu path parsing - sử dụng TrimPrefix và Index thay vì Split + Replace
-	path := strings.TrimPrefix(r.URL.Path, "/")
-	var bucketName string
+// parseRequestPath tách URL path thành bucket name và object key
+func parseRequestPath(urlPath string) (bucket, path string) {
+	path = strings.TrimPrefix(urlPath, "/")
 	if i := strings.Index(path, "/"); i != -1 {
-		bucketName = path[:i]
-		path = path[i+1:]
-	} else {
-		bucketName = path
-		path = ""
+		return path[:i], path[i+1:]
 	}
-	output, err := s3Client.GetObject(r.Context(), bucketName, path, client.WithRangeHeader(r.Header.Get("Range")))
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	defer output.Body.Close()
+	return path, ""
+}
 
-	// Set headers từ S3Object
+// applyPrefixToPath áp dụng PREFIX_PATH vào request path nếu được cấu hình
+// Trả về path mới đã được thêm prefix
+func applyPrefixToPath(originalPath string) string {
+	prefix := os.Getenv("PREFIX_PATH")
+	if prefix == "" {
+		return originalPath
+	}
+
+	// Chuẩn hóa prefix và path
+	prefix = strings.Trim(prefix, "/")
+	path := strings.TrimPrefix(originalPath, "/")
+
+	// Kết hợp prefix và path
+	return "/" + prefix + "/" + path
+}
+
+// setResponseHeaders thiết lập tất cả response headers từ S3Object
+func setResponseHeaders(w http.ResponseWriter, output *client.S3Object) {
 	if output.ContentType != "" {
 		w.Header().Set("Content-Type", output.ContentType)
 	}
@@ -44,32 +53,55 @@ func Handler(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Range", output.ContentRange)
 	}
 
-	// Copy metadata headers - tối ưu filtering
+	// Copy metadata headers với filtering
 	for key, value := range output.Metadata {
-		// Skip Wasabi-specific headers using prefix check for better performance
 		if strings.HasPrefix(strings.ToLower(key), "wasabi") ||
 			strings.HasPrefix(strings.ToLower(value), "wasabi") {
 			continue
 		}
 		w.Header().Set("x-amz-meta-"+key, value)
 	}
+}
 
-	// Determine the final status code
-	statusCode := output.StatusCode
+// getStatusCode xác định HTTP status code phù hợp
+func getStatusCode(output *client.S3Object) int {
 	if output.ContentRange != "" {
-		// For partial content requests, override Content-Type for compatibility
-		// Giữ nguyên Content-Type gốc thay vì ghi đè
-		statusCode = http.StatusPartialContent
+		return http.StatusPartialContent
 	}
+	return output.StatusCode
+}
 
-	// Write the header with the determined status code
-	w.WriteHeader(statusCode)
-
-	// Copy the S3 object body to the HTTP response writer
-	if _, err := io.Copy(w, output.Body); err != nil {
+// writeResponseBody copy S3 object body với error handling
+func writeResponseBody(w http.ResponseWriter, r *http.Request, body io.ReadCloser) {
+	if _, err := io.Copy(w, body); err != nil {
 		// Chỉ log lỗi thực sự, không log khi client disconnect
 		if r.Context().Err() == nil {
 			log.Printf("Error copying S3 object body: %v", err)
 		}
 	}
+}
+
+// Handler xử lý HTTP request cho S3 object
+func Handler(w http.ResponseWriter, r *http.Request) {
+	// 1. Áp dụng prefix TRƯỚC KHI parse (tuân thủ SRP)
+	prefixedPath := applyPrefixToPath(r.URL.Path)
+
+	// 2. Parse request path từ fullPath đã xử lý prefix
+	bucket, path := parseRequestPath(prefixedPath)
+
+	// 3. Fetch S3 object
+	output, err := s3Client.GetObject(r.Context(), bucket, path,
+		client.WithRangeHeader(r.Header.Get("Range")))
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	defer output.Body.Close()
+
+	// 4. Set response headers
+	setResponseHeaders(w, output)
+
+	// 5. Write status code and body
+	w.WriteHeader(getStatusCode(output))
+	writeResponseBody(w, r, output.Body)
 }
