@@ -12,7 +12,8 @@ import (
 )
 
 type S3Client struct {
-	pc *s3.PresignClient
+	pc         *s3.PresignClient
+	httpClient *http.Client // Add a shared HTTP client
 }
 
 func NewS3Client() *S3Client {
@@ -31,7 +32,8 @@ func NewS3Client() *S3Client {
 	client := s3.New(options)
 	presignClient := s3.NewPresignClient(client)
 	return &S3Client{
-		pc: presignClient,
+		pc:         presignClient,
+		httpClient: &http.Client{}, // Initialize the shared HTTP client
 	}
 }
 
@@ -70,6 +72,5 @@ func (c *S3Client) GetObject(
 	}
 	req.Header.Set("Cache-Control", "no-cache")
 	req.Header.Set("Pragma", "no-cache")
-	httpClient := http.Client{}
-	return httpClient.Do(req)
+	return c.httpClient.Do(req) // Use the shared HTTP client
 }
