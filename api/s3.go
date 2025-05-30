@@ -16,31 +16,40 @@ func Handler(w http.ResponseWriter, r *http.Request) {
 	path := strings.TrimLeft(r.URL.Path, "/")
 	bucketName := strings.Split(path, "/")[0]
 	path = strings.Replace(path, bucketName+"/", "", 1)
-	output, err := s3Client.GetObject(r.Context(), bucketName, path, r.Header)
+	output, err := s3Client.GetObject(r.Context(), bucketName, path, client.WithRangeHeader(r.Header.Get("Range")))
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 	defer output.Body.Close()
 
-	// Set all headers from S3 response first
-	for key, values := range output.Header {
-		for _, value := range values {
-			// Skip Wasabi-specific headers if they are not desired in the final response
-			if strings.Contains(key, "Wasabi") || strings.Contains(value, "Wasabi") {
-				continue
-			}
-			w.Header().Add(key, value)
+	// Set headers từ S3Object
+	if output.ContentType != "" {
+		w.Header().Set("Content-Type", output.ContentType)
+	}
+	if output.ContentLength > 0 {
+		w.Header().Set("Content-Length", fmt.Sprintf("%d", output.ContentLength))
+	}
+	if output.ETag != "" {
+		w.Header().Set("ETag", output.ETag)
+	}
+	if output.ContentRange != "" {
+		w.Header().Set("Content-Range", output.ContentRange)
+	}
+
+	// Copy metadata headers
+	for key, value := range output.Metadata {
+		// Skip Wasabi-specific headers if they are not desired in the final response
+		if strings.Contains(key, "Wasabi") || strings.Contains(value, "Wasabi") {
+			continue
 		}
+		w.Header().Set("x-amz-meta-"+key, value)
 	}
 
 	// Determine the final status code
 	statusCode := output.StatusCode
-	if output.Header.Get("Content-Range") != "" {
-		// For partial content requests, set Content-Length and Content-Type, and use 206 Partial Content status
-		w.Header().Set("Content-Length", fmt.Sprintf("%d", output.ContentLength))
-		// The original code explicitly set application/octet-stream for partial content.
-		// If the original S3 Content-Type should be preserved, use: w.Header().Set("Content-Type", output.Header.Get("Content-Type"))
+	if output.ContentRange != "" {
+		// For partial content requests, override Content-Type for compatibility
 		w.Header().Set("Content-Type", "application/octet-stream")
 		statusCode = http.StatusPartialContent
 	}
