@@ -22,25 +22,34 @@ func Handler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer output.Body.Close()
-	w.WriteHeader(output.StatusCode)
+
+	// Set all headers from S3 response first
 	for key, values := range output.Header {
 		for _, value := range values {
-			if strings.Contains(key, "Wasabi") {
-				continue
-			}
-			if strings.Contains(value, "Wasabi") {
+			// Skip Wasabi-specific headers if they are not desired in the final response
+			if strings.Contains(key, "Wasabi") || strings.Contains(value, "Wasabi") {
 				continue
 			}
 			w.Header().Add(key, value)
 		}
 	}
+
+	// Determine the final status code
+	statusCode := output.StatusCode
 	if output.Header.Get("Content-Range") != "" {
+		// For partial content requests, set Content-Length and Content-Type, and use 206 Partial Content status
 		w.Header().Set("Content-Length", fmt.Sprintf("%d", output.ContentLength))
+		// The original code explicitly set application/octet-stream for partial content.
+		// If the original S3 Content-Type should be preserved, use: w.Header().Set("Content-Type", output.Header.Get("Content-Type"))
 		w.Header().Set("Content-Type", "application/octet-stream")
-		w.WriteHeader(http.StatusPartialContent)
+		statusCode = http.StatusPartialContent
 	}
 
+	// Write the header with the determined status code
+	w.WriteHeader(statusCode)
+
+	// Copy the S3 object body to the HTTP response writer
 	if _, err := io.Copy(w, output.Body); err != nil {
-		log.Println(err)
+		log.Println("Error copying S3 object body to response writer:", err)
 	}
 }
