@@ -62,15 +62,7 @@ func (c *S3Client) GetObject(
 	if err != nil {
 		return nil, err
 	}
-	for key, values := range header {
-		for _, value := range values {
-			if key == "If-Modified-Since" || key == "If-None-Match" {
-				continue
-			}
-			req.Header.Add(key, value)
-		}
-	}
-	req.Header.Set("Cache-Control", "no-cache")
-	req.Header.Set("Pragma", "no-cache")
+	// Chỉ sử dụng URL đã được ký từ SDK, không thêm headers bổ sung
+	// để tránh lỗi "headers not signed"
 	return c.httpClient.Do(req) // Use the shared HTTP client
 }
