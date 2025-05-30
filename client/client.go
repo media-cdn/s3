@@ -26,6 +26,7 @@ func NewS3Client() *S3Client {
 				"",
 			),
 		),
+		UsePathStyle: os.Getenv("USE_PATH_STYLE") == "true",
 	}
 	client := s3.New(options)
 	presignClient := s3.NewPresignClient(client)
